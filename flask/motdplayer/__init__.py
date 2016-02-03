@@ -94,12 +94,19 @@ class CustomDataExchanger(object):
         return self._srcds_client.exchange_custom_data(custom_data)
 
 
-def get_route(page_id):
+def get_srcds_request_route(page_id):
     return config.get('application', 'route').format(page_id=page_id)
 
 
+def get_consequent_request_route(page_id):
+    return config.get('application', 'route_with_auth_method').format(
+        page_id=page_id,
+        auth_method=AUTH_BY_WEB,
+    )
+
+
 def srcds_request(app, page_id, *args, **kwargs):
-    route = get_route(page_id)
+    route = get_srcds_request_route(page_id)
 
     def decorator(f):
         def new_func(steamid, auth_method, auth_token, session_id):
@@ -135,9 +142,9 @@ def srcds_request(app, page_id, *args, **kwargs):
                         steamid, new_salt, session_id):
 
                     return f(
-                        steamid=steamid,
+                        steamid=None,
                         web_auth_token=None,
-                        session_id=session_id,
+                        session_id=-1,
                         data_exchanger=None,
                         error="IDENTITY_REJECTED",
                     )
@@ -147,9 +154,9 @@ def srcds_request(app, page_id, *args, **kwargs):
             else:
                 if not srcds_client.set_identity(steamid, None, session_id):
                     return f(
-                        steamid=steamid,
+                        steamid=None,
                         web_auth_token=None,
-                        session_id=session_id,
+                        session_id=-1,
                         data_exchanger=None,
                         error="IDENTITY_REJECTED",
                     )
@@ -168,6 +175,46 @@ def srcds_request(app, page_id, *args, **kwargs):
             )
             srcds_client.end_communication(send_action=True)
             return result
+
+        return app.route(route, *args, **kwargs)(new_func)
+
+    return decorator
+
+
+def consequent_request(app, page_id, *args, **kwargs):
+    route = get_consequent_request_route(page_id)
+
+    def decorator(f):
+        def new_func(steamid, auth_token, session_id):
+            steamid = str(steamid)
+            user = User.query.filter_by(steamid=steamid).first()
+            if user is None:
+                return f(
+                    steamid=None,
+                    web_auth_token=None,
+                    session_id=-1,
+                    error="USER_DOES_NOT_EXIST"
+                )
+
+            if not user.authenticate(
+                    AUTH_BY_WEB, page_id, auth_token, session_id):
+
+                return f(
+                    steamid=None,
+                    web_auth_token=None,
+                    session_id=-1,
+                    error="INVALID_AUTH",
+                )
+
+            user.web_salt = user.get_new_salt()
+            db.session.commit()
+
+            return f(
+                steamid=steamid,
+                web_auth_token=user.get_web_auth_token(page_id, session_id),
+                session_id=session_id,
+                error=None,
+            )
 
         return app.route(route, *args, **kwargs)(new_func)
 
