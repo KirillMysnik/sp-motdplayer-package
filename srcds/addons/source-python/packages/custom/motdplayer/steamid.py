@@ -1,3 +1,9 @@
+from core import GAME_NAME
+
+
+# My steamid is STEAM_0:0:33051913 but in CS:GO it's STEAM_1:0:33051913
+LEGACY_UNIVERSE = 1 if GAME_NAME == 'csgo' else 0
+
 ACCOUNT_TYPE_TO_INSTANCE = {
     1: 1,
     3: 1,
@@ -91,7 +97,7 @@ class SteamID:
     def _load_from_legacy(self, source):
         source = source[len('STEAM_'):]
         u0, j, k = source.split(':')
-        if int(u0) != 0:
+        if int(u0) != LEGACY_UNIVERSE:
             raise ValueError("Unknown legacy universe: ({})".format(u0))
 
         self.universe = 1
@@ -133,7 +139,7 @@ class SteamID:
             raise ValueError("Can't convert ({}) universe "
                              "to legacy universe".format(self.universe))
 
-        u0 = "0"
+        u0 = LEGACY_UNIVERSE
         j = self.account_id & 1
         k = (self.account_id >> 1) & ((1 << 31) - 1)
         return "STEAM_{}:{}:{}".format(u0, j, k)

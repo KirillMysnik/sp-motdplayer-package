@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
+from core import GAME_NAME
 from cvars import ConVar
 from listeners import OnClientActive, OnClientDisconnect
 from messages import VGUIMenu
@@ -23,6 +24,7 @@ from .steamid import SteamID
 AUTH_BY_SRCDS = 1
 AUTH_BY_WEB = 2
 
+MESSED_UP_GAMES = ('csgo', )
 MOTDPLAYER_DATA_PATH = CUSTOM_DATA_PATH / "motdplayer"
 SECRET_SALT_FILE = MOTDPLAYER_DATA_PATH / "secret_salt.dat"
 CONFIG_FILE = MOTDPLAYER_DATA_PATH / "config.ini"
@@ -116,6 +118,16 @@ class MOTDPlayer:
 
         return session
 
+    def close_all_sessions(self, error=None):
+        if error is not None:
+            for session in self._sessions.values():
+                try:
+                    session.error(error)
+                except Exception as e:
+                    warn(Warning(e))    # TODO: Print traceback instead
+
+        self._sessions.clear()
+
     def discard_session(self, session_id):
         if session_id in self._sessions:
             del self._sessions[session_id]
@@ -129,12 +141,11 @@ class MOTDPlayer:
         ).hexdigest()
 
     def confirm_new_salt(self, new_salt):
-        db_session = Session()
-
         self.salt = new_salt
 
-        db_session.commit()
-        db_session.close()
+        # We save new salt to the database immediately to prevent
+        # losing it when server crashes
+        self.save_to_database()
 
         return True
 
@@ -173,7 +184,12 @@ class MOTDPlayer:
         self._sessions[self._next_session_id] = session
         self._next_session_id += 1
 
-        url = config['motd']['url'].format(
+        if GAME_NAME in MESSED_UP_GAMES:
+            url_base = config['motd']['url_csgo']
+        else:
+            url_base = config['motd']['url']
+
+        url = url_base.format(
             server_addr=SERVER_ADDR,
             page_id=page_id,
             steamid=self.communityid,
@@ -182,14 +198,12 @@ class MOTDPlayer:
             session_id=session.id,
         )
 
-        type_ = '0' if debug else '2'
-
         VGUIMenu(
             name='info',
             show=True,
             subkeys={
                 'title': 'MOTD',
-                'type': type_,
+                'type': '0' if debug else '2',
                 'msg': url,
             }
         ).send(self.player.index)
@@ -203,7 +217,7 @@ class MOTDPlayerManager(dict):
         SPThread(target=motd_player.load_from_database).start()
 
     def delete(self, motd_player):
-        SPThread(target=motd_player.save_to_database).start()
+        motd_player.close_all_sessions("MOTDPLAYER_DELETED")
         del self[motd_player.player.userid]
 
     def get_by_index(self, index):
@@ -250,6 +264,11 @@ restart_server()
 @OnClientActive
 def listener_on_client_active(index):
     player = Player(index)
+
+    # Check if CommunityID conversion will fail
+    if player.steamid == "BOT":
+        return
+
     player_manager.create(player)
 
 

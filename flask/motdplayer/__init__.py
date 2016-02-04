@@ -1,33 +1,16 @@
 from ConfigParser import ConfigParser
-from hashlib import sha512
 import os.path
-from random import choice, randrange
 import socket
-import string
-
-from flask.ext.sqlalchemy import SQLAlchemy
 
 from .client import SockClient
 from .srcds_client import SRCDSClient
 
 
-SALT_CHARACTERS = string.ascii_letters + string.digits
-SALT_LENGTH = 64
-
 AUTH_BY_SRCDS = 1
 AUTH_BY_WEB = 2
 
 MOTDPLAYER_DATA_PATH = os.path.join(os.path.dirname(__file__), 'data')
-SECRET_SALT_FILE = os.path.join(MOTDPLAYER_DATA_PATH, "secret_salt.dat")
 CONFIG_FILE = os.path.join(MOTDPLAYER_DATA_PATH, "config.ini")
-
-if os.path.isfile(SECRET_SALT_FILE):
-    with open(SECRET_SALT_FILE, 'rb') as f:
-        SECRET_SALT = f.read()
-else:
-    SECRET_SALT = bytes([randrange(256) for x in range(32)])
-    with open(SECRET_SALT_FILE, 'wb') as f:
-        f.write(SECRET_SALT)
 
 config = ConfigParser()
 config.read(CONFIG_FILE)
@@ -37,53 +20,16 @@ db = None
 User = None
 
 
-def init_database(app):
+def init(app, db_):
     global db, User
-    db = SQLAlchemy(app)
+    db = db_
 
-    class User(db.Model):
-        __tablename__ = "motdplayer_users"
+    from .models import init_database
+    init_database(app, db)
+    from .models import User
 
-        id = db.Column(db.Integer, primary_key=True)
-        steamid = db.Column(db.String(32))
-        salt = db.Column(db.String(64))
-        web_salt = db.Column(db.String(64))
-
-        def __init__(self, steamid):
-            super(User, self).__init__()
-
-            self.steamid = steamid
-            self.salt = ""
-            self.web_salt = ""
-
-        def get_auth_token(self, page_id, session_id):
-            return sha512(
-                (
-                    self.salt + self.steamid + page_id + str(session_id)
-                ).encode('ascii') + SECRET_SALT
-            ).hexdigest()
-
-        def get_web_auth_token(self, page_id, session_id):
-            return sha512(
-                (
-                    self.web_salt + self.steamid + page_id + str(session_id)
-                ).encode('ascii') + SECRET_SALT
-            ).hexdigest()
-
-        def authenticate(self, method, page_id, auth_token, session_id):
-            if method == AUTH_BY_SRCDS:
-                auth_token2 = self.get_auth_token(page_id, session_id)
-            elif method == AUTH_BY_WEB:
-                auth_token2 = self.get_web_auth_token(page_id, session_id)
-            else:
-                return False
-
-            return auth_token2 == auth_token
-
-        @staticmethod
-        def get_new_salt():
-            return ''.join(
-                [choice(SALT_CHARACTERS) for x in range(SALT_LENGTH)])
+    from .views import init_views
+    init_views(app)
 
 
 class CustomDataExchanger(object):
@@ -161,7 +107,8 @@ def srcds_request(app, page_id, *args, **kwargs):
                         error="IDENTITY_REJECTED",
                     )
 
-                user.web_salt = user.get_new_salt()
+                web_salt = user.get_new_salt()
+                user.web_salt = web_salt
 
             db.session.commit()
 
