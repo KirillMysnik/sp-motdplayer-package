@@ -70,11 +70,12 @@ class SessionClosedException(Exception):
 
 class MOTDPlayer:
     class Session:
-        def __init__(self, motd_player, id_, callback):
+        def __init__(self, motd_player, id_, callback, retargeting_callback):
             self._closed = False
             self._motd_player = motd_player
             self.id = id_
             self.callback = callback
+            self.retargeting_callback = retargeting_callback
 
         def error(self, error):
             if self._closed:
@@ -87,6 +88,15 @@ class MOTDPlayer:
                 raise SessionClosedException("Please stop data transmission")
 
             return self.callback(data=data, error=None)
+
+        def request_retargeting(self, new_page_id):
+            if self._closed:
+                raise SessionClosedException("Please stop data transmission")
+
+            if self.retargeting_callback is None:
+                return None
+
+            return self.retargeting_callback(new_page_id)
 
         def close(self):
             self._closed = True
@@ -176,11 +186,12 @@ class MOTDPlayer:
 
         db_session.close()
 
-    def send_page(self, page_id, callback, auth_for=None, debug=False):
-        if auth_for is None:
-            auth_for = page_id
+    def send_page(self, page_id, callback, retargeting_callback=None,
+                  debug=False):
 
-        session = self.Session(self, self._next_session_id, callback)
+        session = self.Session(self, self._next_session_id,
+                               callback, retargeting_callback)
+
         self._sessions[self._next_session_id] = session
         self._next_session_id += 1
 
@@ -194,7 +205,7 @@ class MOTDPlayer:
             page_id=page_id,
             steamid=self.communityid,
             auth_method=AUTH_BY_SRCDS,
-            auth_token=self.get_auth_token(auth_for, session.id),
+            auth_token=self.get_auth_token(page_id, session.id),
             session_id=session.id,
         )
 
@@ -239,6 +250,30 @@ def get_by_index(index):
 
 def get_by_userid(userid):
     return player_manager.get(userid)
+
+
+def send_page(player, page_id, callback, retargeting_callback=None,
+              debug=False):
+
+    if isinstance(player, Player):
+        motd_player = player_manager.get(player.userid)
+        if motd_player is None:
+            raise ValueError("Corresponding MOTDPlayer doesn't exist")
+
+    elif isinstance(player, int):
+        try:
+            motd_player = player_manager.get_by_index(player)
+            if motd_player is None:
+                raise ValueError
+
+        except (OverflowError, ValueError):
+            raise ValueError("Passed integer should be valid player index")
+
+    else:
+        raise TypeError("Expected either Player instance or a player index, "
+                        "got '{}' instead".format(type(player)))
+
+    motd_player.send_page(page_id, callback, retargeting_callback, debug)
 
 
 def on_client_accepted(client):

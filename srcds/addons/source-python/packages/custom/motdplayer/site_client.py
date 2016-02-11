@@ -80,6 +80,64 @@ class SiteClient:
 
             return
 
+        if response['action'] == "retarget":
+            if self.motd_player is None:
+                self.end_communication()
+                raise RuntimeError("Site tried to make retargeting request "
+                                   "prior to setting identity")
+
+            try:
+                new_callbacks = self.session.request_retargeting(
+                    response['new_page_id'])
+
+            except SessionClosedException:
+                self.client.send_message(dumps({
+                    'status': "ERROR_SESSION_CLOSED2",
+                }).encode('utf-8'))
+                self.end_communication()
+                return
+
+            except Exception as e:
+                self.client.send_message(dumps({
+                    'status': "ERROR_RETARGETING_CALLBACK_EXCEPTION",
+                }).encode('utf-8'))
+                self.end_communication()
+                raise e
+
+            if new_callbacks is None:
+                self.client.send_message(dumps({
+                    'status': "ERROR_RETARGETING_REFUSED",
+                }).encode('utf-8'))
+                self.end_communication()
+                return
+
+            try:
+                new_callback, new_retargeting_callback = new_callbacks
+
+                if not callable(new_callback):
+                    raise ValueError
+
+                if (new_retargeting_callback is not None and
+                        not callable(new_retargeting_callback)):
+
+                    raise ValueError
+
+            except ValueError:
+                self.client.send_message(dumps({
+                    'status': "ERROR_RETARGETING_CALLBACK_INVALID_ANSWER",
+                }).encode('utf-8'))
+                self.end_communication()
+                return
+
+            self.session.callback = new_callback
+            self.session.retargeting_callback = new_retargeting_callback
+
+            self.client.send_message(dumps({
+                'status': "OK",
+            }).encode('utf-8'))
+            self.end_communication()
+            return
+
         if response['action'] == "receive_custom_data":
             if self.motd_player is None:
                 self.end_communication()
@@ -122,7 +180,7 @@ class SiteClient:
 
             except Exception as e:
                 self.client.send_message(dumps({
-                    'status': "ERROR_CALLBACK_INVALID_ANSWER",
+                    'status': "ERROR_CALLBACK_INVALID_ANSWER2",
                 }).encode('utf-8'))
                 self.end_communication()
                 raise e

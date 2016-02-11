@@ -29,7 +29,7 @@ def init(app, db_):
     from .models import User
 
     from .views import init_views
-    init_views(app)
+    init_views(app, db)
 
 
 class CustomDataExchanger(object):

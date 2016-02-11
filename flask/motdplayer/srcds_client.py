@@ -32,6 +32,17 @@ class SRCDSClient(object):
         self.end_communication(send_action=False)
         return False
 
+    def request_retargeting(self, new_page_id):
+        self.client.send_message(dumps({
+            'action': "retarget",
+            'new_page_id': new_page_id,
+        }).encode('utf-8'))
+        response = loads(self.client.receive_message().decode('utf-8'))
+
+        self.end_communication(send_action=False)
+
+        return response['status'] == "OK"
+
     def exchange_custom_data(self, data):
         if not isinstance(data, dict):
             self.client.send_message(dumps({
