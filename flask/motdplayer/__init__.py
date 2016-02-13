@@ -40,19 +40,19 @@ class CustomDataExchanger(object):
         return self._srcds_client.exchange_custom_data(custom_data)
 
 
-def get_srcds_request_route(page_id):
+def get_base_authed_route(page_id):
     return config.get('application', 'route').format(page_id=page_id)
 
 
-def get_consequent_request_route(page_id):
+def get_base_authed_offline_route(page_id):
     return config.get('application', 'route_with_auth_method').format(
         page_id=page_id,
         auth_method=AUTH_BY_WEB,
     )
 
 
-def srcds_request(app, page_id, *args, **kwargs):
-    route = get_srcds_request_route(page_id)
+def base_authed_request(app, page_id, *args, **kwargs):
+    route = get_base_authed_route(page_id)
 
     def decorator(f):
         def new_func(steamid, auth_method, auth_token, session_id):
@@ -128,8 +128,8 @@ def srcds_request(app, page_id, *args, **kwargs):
     return decorator
 
 
-def consequent_request(app, page_id, *args, **kwargs):
-    route = get_consequent_request_route(page_id)
+def base_authed_offline_request(app, page_id, *args, **kwargs):
+    route = get_base_authed_offline_route(page_id)
 
     def decorator(f):
         def new_func(steamid, auth_token, session_id):
@@ -166,3 +166,43 @@ def consequent_request(app, page_id, *args, **kwargs):
         return app.route(route, *args, **kwargs)(new_func)
 
     return decorator
+
+
+def json_authed_request(app, page_id, *args, **kwargs):
+    route = get_json_authed_route(page_id)
+
+    def decorator(f):
+        def new_func(steamid, auth_method, auth_token, session_id):
+            pass
+
+    return decorator
+
+
+@srcds_request(app, 'json/index', methods=['POST', ])
+    def route_json_index(
+            steamid, web_auth_token, session_id, data_exchanger, error):
+
+        if error is not None:
+            return jsonify({
+                'status': error,
+                'web_auth_token': web_auth_token,
+            })
+
+        if request.json['action'] != 'receive-custom-data':
+            return jsonify({
+                'status': "ERROR_BAD_REQUEST",
+                'web_auth_token': web_auth_token,
+            })
+
+        data = data_processor(data_exchanger, request.json['custom_data'])
+        if data is None:
+            return jsonify({
+                'status': "ERROR_SRCDS_FAILURE",
+                'web_auth_token': web_auth_token,
+            })
+
+        return jsonify({
+            'status': "OK",
+            'web_auth_token': web_auth_token,
+            'custom_data': data,
+        })
