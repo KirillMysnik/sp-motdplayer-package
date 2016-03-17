@@ -1,6 +1,9 @@
 from ConfigParser import ConfigParser
+from functools import wraps
 import os.path
 import socket
+
+from flask import jsonify, request
 
 from .client import SockClient
 from .srcds_client import SRCDSClient
@@ -41,20 +44,26 @@ class CustomDataExchanger(object):
 
 
 def get_base_authed_route(page_id):
-    return config.get('application', 'route').format(page_id=page_id)
+    return config.get('application', 'base_route').format(page_id=page_id)
 
 
 def get_base_authed_offline_route(page_id):
-    return config.get('application', 'route_with_auth_method').format(
+    return config.get('application', 'base_route_with_auth_method').format(
         page_id=page_id,
         auth_method=AUTH_BY_WEB,
     )
+
+
+def get_json_page_id(page_id):
+    return config.get('application', 'json_page_id').format(page_id=page_id)
 
 
 def base_authed_request(app, page_id, *args, **kwargs):
     route = get_base_authed_route(page_id)
 
     def decorator(f):
+        @app.route(route, *args, **kwargs)
+        @wraps(f)
         def new_func(steamid, auth_method, auth_token, session_id):
             steamid = str(steamid)
             user = User.query.filter_by(steamid=steamid).first()
@@ -123,7 +132,7 @@ def base_authed_request(app, page_id, *args, **kwargs):
             srcds_client.end_communication(send_action=True)
             return result
 
-        return app.route(route, *args, **kwargs)(new_func)
+        return new_func
 
     return decorator
 
@@ -132,6 +141,8 @@ def base_authed_offline_request(app, page_id, *args, **kwargs):
     route = get_base_authed_offline_route(page_id)
 
     def decorator(f):
+        @app.route(route, *args, **kwargs)
+        @wraps(f)
         def new_func(steamid, auth_token, session_id):
             steamid = str(steamid)
             user = User.query.filter_by(steamid=steamid).first()
@@ -163,46 +174,44 @@ def base_authed_offline_request(app, page_id, *args, **kwargs):
                 error=None,
             )
 
-        return app.route(route, *args, **kwargs)(new_func)
+        return new_func
 
     return decorator
 
 
 def json_authed_request(app, page_id, *args, **kwargs):
-    route = get_json_authed_route(page_id)
-
     def decorator(f):
-        def new_func(steamid, auth_method, auth_token, session_id):
-            pass
+        @base_authed_request(app, page_id, methods=["POST", ])
+        @wraps(f)
+        def base_authed_request_func(
+                steamid, web_auth_token, session_id, data_exchanger, error):
+
+            if error is not None:
+                return jsonify({
+                    'status': error,
+                    'web_auth_token': web_auth_token,
+                })
+
+            if request.json['action'] != 'receive-custom-data':
+                return jsonify({
+                    'status': "ERROR_BAD_REQUEST",
+                    'web_auth_token': web_auth_token,
+                })
+
+            data = f(data_exchanger, request.json['custom_data'])
+
+            if data is None:
+                return jsonify({
+                    'status': "ERROR_SRCDS_FAILURE",
+                    'web_auth_token': web_auth_token,
+                })
+
+            return jsonify({
+                'status': "OK",
+                'web_auth_token': web_auth_token,
+                'custom_data': data,
+            })
+
+        return base_authed_request_func
 
     return decorator
-
-
-@srcds_request(app, 'json/index', methods=['POST', ])
-    def route_json_index(
-            steamid, web_auth_token, session_id, data_exchanger, error):
-
-        if error is not None:
-            return jsonify({
-                'status': error,
-                'web_auth_token': web_auth_token,
-            })
-
-        if request.json['action'] != 'receive-custom-data':
-            return jsonify({
-                'status': "ERROR_BAD_REQUEST",
-                'web_auth_token': web_auth_token,
-            })
-
-        data = data_processor(data_exchanger, request.json['custom_data'])
-        if data is None:
-            return jsonify({
-                'status': "ERROR_SRCDS_FAILURE",
-                'web_auth_token': web_auth_token,
-            })
-
-        return jsonify({
-            'status': "OK",
-            'web_auth_token': web_auth_token,
-            'custom_data': data,
-        })

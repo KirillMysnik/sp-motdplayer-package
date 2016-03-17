@@ -1,4 +1,4 @@
-from socket import socket
+import socket
 
 from flask import jsonify, render_template, request
 

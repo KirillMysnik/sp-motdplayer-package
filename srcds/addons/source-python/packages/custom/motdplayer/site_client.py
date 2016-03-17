@@ -122,7 +122,7 @@ class SiteClient:
 
                     raise ValueError
 
-            except ValueError:
+            except (TypeError, ValueError):
                 self.client.send_message(dumps({
                     'status': "ERROR_RETARGETING_CALLBACK_INVALID_ANSWER",
                 }).encode('utf-8'))

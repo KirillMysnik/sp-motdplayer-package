@@ -19,7 +19,7 @@ var MOTDPlayer = function (pageId, steamid, authToken, sessionId) {
     }
 
     var loadingScreenNode;
-    var authMethod = 1;
+    var authMethod = +/\/\w+\/\d+\/(1|2)\/\w+\/\d+\//g.exec(location.href)[1];
     this.post = function (data, successCallback, errorCallback) {
         ajaxPostJson("/" + pageId + "/" + steamid + "/" + authMethod + "/" + authToken + "/" + sessionId + "/",
             {
@@ -59,6 +59,7 @@ var MOTDPlayer = function (pageId, steamid, authToken, sessionId) {
                 if (response['status'] == "OK") {
                     authMethod = 2;
                     authToken = response['web_auth_token'];
+                    pageId = newPageId;
 
                     if (loadingScreenNode) {
                         loadingScreenNode.parentNode.removeChild(loadingScreenNode);
@@ -82,10 +83,10 @@ var MOTDPlayer = function (pageId, steamid, authToken, sessionId) {
     }
 
     this.goto = function (newPageId, args) {
-        var url = "/" + newPageId + "/" + steamid + "/" + authMethod + "/" + authToken + "/" + sessionId + "/";
-        if (args)
-            url += "?" + args;
         motdPlayer.retarget(newPageId, function () {
+            var url = "/" + newPageId + "/" + steamid + "/" + authMethod + "/" + authToken + "/" + sessionId + "/";
+            if (args)
+                url += "?" + args;
             location.href = url;
         }, function (error) {
             alert(error);
