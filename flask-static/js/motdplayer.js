@@ -1,4 +1,4 @@
-var MOTDPlayer = function (pageId, steamid, authToken, sessionId) {
+var MOTDPlayer = function (serverId, pluginId, pageId, steamid, authToken, sessionId) {
     var motdPlayer = this;
 
     var ajaxPostJson = function (url, data, successCallback, errorCallback) {
@@ -19,9 +19,9 @@ var MOTDPlayer = function (pageId, steamid, authToken, sessionId) {
     }
 
     var loadingScreenNode;
-    var authMethod = +/\/\w+\/\d+\/(1|2)\/\w+\/\d+\//g.exec(location.href)[1];
+    var authMethod = +/\/\w+\/\w+\/\w+\/\d+\/(1|2)\/\w+\/\d+\//g.exec(location.href)[1];
     this.post = function (data, successCallback, errorCallback) {
-        ajaxPostJson("/" + pageId + "/" + steamid + "/" + authMethod + "/" + authToken + "/" + sessionId + "/",
+        ajaxPostJson("/" + serverId + "/" + pluginId + "/" + pageId + "/" + steamid + "/" + authMethod + "/" + authToken + "/" + sessionId + "/",
             {
                 action: "receive-custom-data",
                 custom_data: data
@@ -52,7 +52,7 @@ var MOTDPlayer = function (pageId, steamid, authToken, sessionId) {
     }
 
     this.retarget = function (newPageId, successCallback, errorCallback) {
-        ajaxPostJson("/json/retarget/" + newPageId + "/" + pageId + "/" + steamid + "/" + authMethod + "/" + authToken + "/" + sessionId + "/",
+        ajaxPostJson("/json/retarget/" + serverId + "/" + pluginId + "/" + newPageId + "/" + pageId + "/" + steamid + "/" + authMethod + "/" + authToken + "/" + sessionId + "/",
             {
                 action: "retarget",
             }, function (response) {
@@ -84,7 +84,7 @@ var MOTDPlayer = function (pageId, steamid, authToken, sessionId) {
 
     this.goto = function (newPageId, args) {
         motdPlayer.retarget(newPageId, function () {
-            var url = "/" + newPageId + "/" + steamid + "/" + authMethod + "/" + authToken + "/" + sessionId + "/";
+            var url = "/" + serverId + "/" + pluginId + "/" + newPageId + "/" + steamid + "/" + authMethod + "/" + authToken + "/" + sessionId + "/";
             if (args)
                 url += "?" + args;
             location.href = url;

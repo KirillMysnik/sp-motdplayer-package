@@ -8,15 +8,17 @@ from . import AUTH_BY_SRCDS, AUTH_BY_WEB, MOTDPLAYER_DATA_PATH
 
 SALT_CHARACTERS = string.ascii_letters + string.digits
 SALT_LENGTH = 64
+SERVER_SALTS_DIR = os.path.join(MOTDPLAYER_DATA_PATH, "server_salts")
 
-SECRET_SALT_FILE = os.path.join(MOTDPLAYER_DATA_PATH, "secret_salt.dat")
-if os.path.isfile(SECRET_SALT_FILE):
-    with open(SECRET_SALT_FILE, 'rb') as f:
-        SECRET_SALT = f.read()
-else:
-    SECRET_SALT = bytes([randrange(256) for x in range(32)])
-    with open(SECRET_SALT_FILE, 'wb') as f:
-        f.write(SECRET_SALT)
+
+server_salts = {}
+for item in os.listdir(SERVER_SALTS_DIR):
+    full_item = os.path.join(SERVER_SALTS_DIR, item)
+
+    if os.path.isfile(full_item) and full_item.lower().endswith('.dat'):
+        base_item = os.path.splitext(item)[0]
+        with open(full_item, 'rb') as f:
+            server_salts[base_item] = f.read()
 
 
 User = None
@@ -29,37 +31,53 @@ def init_database(app, db):
         __tablename__ = "motdplayer_users"
 
         id = db.Column(db.Integer, primary_key=True)
+        server_id = db.Column(db.String(32))
         steamid = db.Column(db.String(32))
         salt = db.Column(db.String(64))
         web_salt = db.Column(db.String(64))
 
-        def __init__(self, steamid):
+        def __init__(self, server_id, steamid):
             super(User, self).__init__()
 
+            self.server_id = server_id
             self.steamid = steamid
             self.salt = ""
             self.web_salt = ""
 
-        def get_auth_token(self, page_id, session_id):
+        def get_auth_token(self, plugin_id, page_id, session_id):
             return sha512(
                 (
-                    self.salt + self.steamid + page_id + str(session_id)
-                ).encode('ascii') + SECRET_SALT
+                    self.salt +
+                    self.server_id +
+                    plugin_id +
+                    self.steamid +
+                    page_id +
+                    str(session_id)
+                ).encode('ascii') + server_salts[self.server_id]
             ).hexdigest()
 
-        def get_web_auth_token(self, page_id, session_id):
+        def get_web_auth_token(self, plugin_id, page_id, session_id):
             return sha512(
                 (
-                    self.web_salt + self.steamid + page_id + str(session_id)
-                ).encode('ascii') + SECRET_SALT
+                    self.web_salt +
+                    self.server_id +
+                    plugin_id +
+                    self.steamid +
+                    page_id +
+                    str(session_id)
+                ).encode('ascii') + server_salts[self.server_id]
             ).hexdigest()
 
-        def authenticate(self, method, page_id, auth_token, session_id):
+        def authenticate(
+                self, method, plugin_id, page_id, auth_token, session_id):
+
             if method == AUTH_BY_SRCDS:
-                return auth_token == self.get_auth_token(page_id, session_id)
+                return auth_token == self.get_auth_token(
+                    plugin_id, page_id, session_id)
+
             if method == AUTH_BY_WEB:
                 return auth_token == self.get_web_auth_token(
-                    page_id, session_id)
+                    plugin_id, page_id, session_id)
 
             return False
 

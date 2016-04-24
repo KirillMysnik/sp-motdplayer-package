@@ -1,11 +1,12 @@
 from select import select
 import socket
 
+from listeners.tick import GameThread
+
 from .client import SockClient
-from .spthread import SPThread
 
 
-class SockServer(SPThread):
+class SockServer(GameThread):
     def __init__(self, host, port, whitelist=(), on_client_accepted=None):
         super().__init__()
 

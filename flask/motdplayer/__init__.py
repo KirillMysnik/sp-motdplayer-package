@@ -43,12 +43,15 @@ class CustomDataExchanger(object):
         return self._srcds_client.exchange_custom_data(custom_data)
 
 
-def get_base_authed_route(page_id):
-    return config.get('application', 'base_route').format(page_id=page_id)
+def get_base_authed_route(server_id, plugin_id, page_id):
+    return config.get('application', 'base_route').format(
+        server_id=server_id, plugin_id=plugin_id, page_id=page_id)
 
 
-def get_base_authed_offline_route(page_id):
+def get_base_authed_offline_route(server_id, plugin_id, page_id):
     return config.get('application', 'base_route_with_auth_method').format(
+        server_id=server_id,
+        plugin_id=plugin_id,
         page_id=page_id,
         auth_method=AUTH_BY_WEB,
     )
@@ -58,21 +61,23 @@ def get_json_page_id(page_id):
     return config.get('application', 'json_page_id').format(page_id=page_id)
 
 
-def base_authed_request(app, page_id, *args, **kwargs):
-    route = get_base_authed_route(page_id)
+def base_authed_request(app, server_id, plugin_id, page_id, *args, **kwargs):
+    route = get_base_authed_route(server_id, plugin_id, page_id)
 
     def decorator(f):
         @app.route(route, *args, **kwargs)
         @wraps(f)
         def new_func(steamid, auth_method, auth_token, session_id):
             steamid = str(steamid)
-            user = User.query.filter_by(steamid=steamid).first()
+            user = User.query.filter(
+                User.steamid == steamid, User.server_id == server_id).first()
+
             if user is None:
-                user = User(steamid)
+                user = User(server_id, steamid)
                 db.session.add(user)
 
             if not user.authenticate(
-                    auth_method, page_id, auth_token, session_id):
+                    auth_method, plugin_id, page_id, auth_token, session_id):
 
                 db.session.rollback()
                 return f(
@@ -124,7 +129,8 @@ def base_authed_request(app, page_id, *args, **kwargs):
             custom_data_exchanger = CustomDataExchanger(srcds_client)
             result = f(
                 steamid=steamid,
-                web_auth_token=user.get_web_auth_token(page_id, session_id),
+                web_auth_token=user.get_web_auth_token(
+                    plugin_id, page_id, session_id),
                 session_id=session_id,
                 data_exchanger=custom_data_exchanger,
                 error=None,
@@ -137,15 +143,19 @@ def base_authed_request(app, page_id, *args, **kwargs):
     return decorator
 
 
-def base_authed_offline_request(app, page_id, *args, **kwargs):
-    route = get_base_authed_offline_route(page_id)
+def base_authed_offline_request(
+        app, server_id, plugin_id, page_id, *args, **kwargs):
+
+    route = get_base_authed_offline_route(server_id, plugin_id, page_id)
 
     def decorator(f):
         @app.route(route, *args, **kwargs)
         @wraps(f)
         def new_func(steamid, auth_token, session_id):
             steamid = str(steamid)
-            user = User.query.filter_by(steamid=steamid).first()
+            user = User.query.filter(
+                User.steamid == steamid, User.server_id == server_id).first()
+
             if user is None:
                 return f(
                     steamid=None,
@@ -155,7 +165,7 @@ def base_authed_offline_request(app, page_id, *args, **kwargs):
                 )
 
             if not user.authenticate(
-                    AUTH_BY_WEB, page_id, auth_token, session_id):
+                    AUTH_BY_WEB, plugin_id, page_id, auth_token, session_id):
 
                 return f(
                     steamid=None,
@@ -169,7 +179,8 @@ def base_authed_offline_request(app, page_id, *args, **kwargs):
 
             return f(
                 steamid=steamid,
-                web_auth_token=user.get_web_auth_token(page_id, session_id),
+                web_auth_token=user.get_web_auth_token(
+                    plugin_id, page_id, session_id),
                 session_id=session_id,
                 error=None,
             )
@@ -179,9 +190,11 @@ def base_authed_offline_request(app, page_id, *args, **kwargs):
     return decorator
 
 
-def json_authed_request(app, page_id, *args, **kwargs):
+def json_authed_request(app, server_id, plugin_id, page_id, *args, **kwargs):
     def decorator(f):
-        @base_authed_request(app, page_id, methods=["POST", ])
+        @base_authed_request(
+            app, server_id, plugin_id, page_id, *args,
+            methods=["POST", ], **kwargs)
         @wraps(f)
         def base_authed_request_func(
                 steamid, web_auth_token, session_id, data_exchanger, error):

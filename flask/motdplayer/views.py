@@ -10,10 +10,13 @@ from .srcds_client import SRCDSClient
 def init_views(app, db):
     @app.route(config.get('application', 'csgo_redirect_from'))
     def route_csgo_redirect(
-            page_id, steamid, auth_method, auth_token, session_id):
+            server_id, plugin_id, page_id, steamid, auth_method, auth_token,
+            session_id):
 
         # TODO: maybe just replace it all with **kwargs?
         redirect_to = config.get('application', 'csgo_redirect_to').format(
+            server_id=server_id,
+            plugin_id=plugin_id,
             page_id=page_id,
             steamid=steamid,
             auth_method=auth_method,
@@ -25,8 +28,8 @@ def init_views(app, db):
             "motdplayer/csgo_redirect.html", redirect_to=redirect_to)
 
     @app.route(config.get('application', 'retarget_url'), methods=['POST', ])
-    def route_json_retarget(new_page_id, page_id, steamid, auth_method,
-                            auth_token, session_id):
+    def route_json_retarget(server_id, plugin_id, new_page_id, page_id,
+                            steamid, auth_method, auth_token, session_id):
 
         if request.json['action'] != "retarget":
             return jsonify({
@@ -34,15 +37,17 @@ def init_views(app, db):
             })
 
         steamid = str(steamid)
-        user = User.query.filter_by(steamid=steamid).first()
+        user = User.query.filter(
+            User.steamid == steamid, User.server_id == server_id).first()
+
         if user is None:
-            return jsonify({
-                'status': "ERROR_USER_DOES_NOT_EXIST",
-            })
+            user = User(server_id, steamid)
+            db.session.add(user)
 
         if not user.authenticate(
-                auth_method, page_id, auth_token, session_id):
+                auth_method, plugin_id, page_id, auth_token, session_id):
 
+            db.session.rollback()
             return jsonify({
                 'status': "ERROR_INVALID_AUTH",
             })
@@ -82,5 +87,6 @@ def init_views(app, db):
 
         return jsonify({
             'status': "OK",
-            'web_auth_token': user.get_web_auth_token(new_page_id, session_id),
+            'web_auth_token': user.get_web_auth_token(
+                plugin_id, new_page_id, session_id),
         })

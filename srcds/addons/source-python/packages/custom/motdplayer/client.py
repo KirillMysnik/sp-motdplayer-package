@@ -1,6 +1,6 @@
 from select import select
 
-from .spthread import SPThread
+from listeners.tick import GameThread
 
 
 CHUNK_SIZE = 4096
@@ -10,7 +10,7 @@ class ConnectionClose(Exception):
     pass
 
 
-class SockClient(SPThread):
+class SockClient(GameThread):
     def __init__(self, sock_server, sock, on_message_received=None):
         super().__init__()
 

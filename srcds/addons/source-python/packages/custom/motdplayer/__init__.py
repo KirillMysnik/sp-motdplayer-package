@@ -10,14 +10,14 @@ from sqlalchemy.orm import sessionmaker
 from core import GAME_NAME
 from cvars import ConVar
 from listeners import OnClientActive, OnClientDisconnect
+from listeners.tick import GameThread
 from messages import VGUIMenu
 from paths import CUSTOM_DATA_PATH
 from players.entity import Player
-from players.helpers import userid_from_index
+from players.helpers import index_from_userid
 
 from .server import SockServer
 from .site_client import SiteClient
-from .spthread import SPThread
 from .steamid import SteamID
 
 
@@ -142,11 +142,16 @@ class MOTDPlayer:
         if session_id in self._sessions:
             del self._sessions[session_id]
 
-    def get_auth_token(self, page_id, session_id):
+    def get_auth_token(self, plugin_id, page_id, session_id):
         personal_salt = '' if self.salt is None else self.salt
         return sha512(
             (
-                personal_salt + self.communityid + page_id + str(session_id)
+                personal_salt +
+                config['server']['id'] +
+                plugin_id +
+                self.communityid +
+                page_id +
+                str(session_id)
             ).encode('ascii') + SECRET_SALT
         ).hexdigest()
 
@@ -186,8 +191,8 @@ class MOTDPlayer:
 
         db_session.close()
 
-    def send_page(self, page_id, callback, retargeting_callback=None,
-                  debug=False):
+    def send_page(self, plugin_id, page_id, callback,
+                  retargeting_callback=None, debug=False):
 
         session = self.Session(self, self._next_session_id,
                                callback, retargeting_callback)
@@ -202,10 +207,12 @@ class MOTDPlayer:
 
         url = url_base.format(
             server_addr=SERVER_ADDR,
+            server_id=config['server']['id'],
+            plugin_id=plugin_id,
             page_id=page_id,
             steamid=self.communityid,
             auth_method=AUTH_BY_SRCDS,
-            auth_token=self.get_auth_token(page_id, session.id),
+            auth_token=self.get_auth_token(plugin_id, page_id, session.id),
             session_id=session.id,
         )
 
@@ -224,16 +231,16 @@ class MOTDPlayer:
 
 class MOTDPlayerManager(dict):
     def create(self, player):
-        self[player.userid] = motd_player = MOTDPlayer(player)
-        SPThread(target=motd_player.load_from_database).start()
+        self[player.index] = motd_player = MOTDPlayer(player)
+        GameThread(target=motd_player.load_from_database).start()
 
     def delete(self, motd_player):
         motd_player.close_all_sessions("MOTDPLAYER_DELETED")
-        del self[motd_player.player.userid]
+        del self[motd_player.player.index]
 
-    def get_by_index(self, index):
-        userid = userid_from_index(index)
-        return self.get(userid)
+    def get_by_userid(self, userid):
+        index = index_from_userid(userid)
+        return self.get(index)
 
     def get_by_communityid(self, communityid):
         for motd_player in self.values():
@@ -245,24 +252,24 @@ player_manager = MOTDPlayerManager()
 
 
 def get_by_index(index):
-    return player_manager.get_by_index(index)
+    return player_manager.get(index)
 
 
 def get_by_userid(userid):
-    return player_manager.get(userid)
+    return player_manager.get_by_userid(userid)
 
 
-def send_page(player, page_id, callback, retargeting_callback=None,
+def send_page(player, plugin_id, page_id, callback, retargeting_callback=None,
               debug=False):
 
     if isinstance(player, Player):
-        motd_player = player_manager.get(player.userid)
+        motd_player = player_manager.get(player.index)
         if motd_player is None:
             raise ValueError("Corresponding MOTDPlayer doesn't exist")
 
     elif isinstance(player, int):
         try:
-            motd_player = player_manager.get_by_index(player)
+            motd_player = player_manager[player]
             if motd_player is None:
                 raise ValueError
 
@@ -273,7 +280,8 @@ def send_page(player, page_id, callback, retargeting_callback=None,
         raise TypeError("Expected either Player instance or a player index, "
                         "got '{}' instead".format(type(player)))
 
-    motd_player.send_page(page_id, callback, retargeting_callback, debug)
+    motd_player.send_page(
+        plugin_id, page_id, callback, retargeting_callback, debug)
 
 
 def on_client_accepted(client):
@@ -309,6 +317,6 @@ def listener_on_client_active(index):
 
 @OnClientDisconnect
 def listener_on_client_disconnect(index):
-    motd_player = player_manager.get_by_index(index)
+    motd_player = player_manager.get(index)
     if motd_player is not None:
         player_manager.delete(motd_player)
