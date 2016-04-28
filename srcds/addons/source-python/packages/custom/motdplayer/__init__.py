@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from core import GAME_NAME
 from cvars import ConVar
-from listeners import OnClientActive, OnClientDisconnect
+from listeners import OnClientActive, OnClientDisconnect, OnLevelInit
 from listeners.tick import GameThread
 from messages import VGUIMenu
 from paths import CUSTOM_DATA_PATH
@@ -319,4 +319,10 @@ def listener_on_client_active(index):
 def listener_on_client_disconnect(index):
     motd_player = player_manager.get(index)
     if motd_player is not None:
+        player_manager.delete(motd_player)
+
+
+@OnLevelInit
+def listener_on_level_init(map_name):
+    for motd_player in tuple(player_manager.values()):
         player_manager.delete(motd_player)

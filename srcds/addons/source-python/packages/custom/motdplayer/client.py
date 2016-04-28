@@ -78,8 +78,6 @@ class SockClient(GameThread):
                 break
 
     def stop(self):
-        super().stop()
-
         if not self.running:
             return
 

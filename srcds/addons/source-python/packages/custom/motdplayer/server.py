@@ -44,8 +44,6 @@ class SockServer(GameThread):
             r, w, e = select([self.sock], [], [])
 
     def stop(self):
-        super().stop()
-
         if not self.running:
             return
 
