@@ -19,7 +19,7 @@ var MOTDPlayer = function (serverId, pluginId, pageId, steamid, authToken, sessi
     }
 
     var loadingScreenNode;
-    var authMethod = +/\/\w+\/\w+\/\w+\/\d+\/(1|2)\/\w+\/\d+\//g.exec(location.href)[1];
+    var authMethod = +/\/[\w\-]+\/\w+\/[\w\-]+\/\d+\/(1|2)\/\w+\/\d+\//g.exec(location.href)[1];
     this.post = function (data, successCallback, errorCallback) {
         ajaxPostJson("/" + serverId + "/" + pluginId + "/" + pageId + "/" + steamid + "/" + authMethod + "/" + authToken + "/" + sessionId + "/",
             {
